@@ -1,0 +1,118 @@
+require(pacman)
+pacman::p_load("boot","data.table","rnaturalearth","rnaturalearthdata","RColorBrewer","sf","tidyverse","this.path")
+
+root_dir <- this.path::here(..=1)
+
+# Load standardized models
+M <- readRDS(file="Data/DSH_2Qs=TRUE_RecEFF=Hours_OldSTART=1948.rds")
+
+# Load finer scale grid information (used later to create maps)
+G    <- fread(file="Data/Grids.csv") 
+G    <- G %>% mutate_if(is.numeric,as.character)
+Ga   <- data.table(AREA_A=unique(G$AREA_A))
+Ga$AREA <- Ga$AREA_A
+G    <- rbind(G,Ga)
+
+# Load fishing grid shapefiles (used later to create maps)
+coast         <- ne_coastline(scale="medium",returnclass="sf") 
+grids         <- st_read("Data/Grids/DAR_Reporting_grids_all.shp")
+grids$AREA_ID <- as.character(grids$AREA_ID)
+grids$AREA_A  <- NULL
+
+# Split models up
+A <- M[[1]]
+B <- M[[2]]
+C <- M[[3]]
+D <- M[[4]]
+
+# Create Walter Large Tables from the dataset
+WLT.A <- data.table( table(A@frame$FYEAR,A@frame$`factor(MONTH)`,A@frame$AREA_A)    );WLT.A <- select(WLT.A,-N);setnames(WLT.A,c("FYEAR","MONTH","AREA_A"))
+WLT.B <- data.table( table(B$model$FYEAR,B$model$`factor(MONTH)`,B$model$AREA_A)    );WLT.B <- select(WLT.B,-N);setnames(WLT.B,c("FYEAR","MONTH","AREA_A"))
+WLT.C <- data.table( table(C@frame$FYEAR,C@frame$`factor(MONTH)`,C@frame$AREA_A)    );WLT.C <- select(WLT.C,-N);setnames(WLT.C,c("FYEAR","MONTH","AREA_A"))
+WLT.D <- data.table( table(D$model$FYEAR,D$model$`factor(MONTH)`,D$model$AREA_A)    );WLT.D <- select(WLT.D,-N);setnames(WLT.D,c("FYEAR","MONTH","AREA_A"))
+
+# Mode function
+find_mode <- function(x) {
+  u   <- unique(x)
+  tab <- tabulate(match(x, u))
+  u[tab == max(tab)]
+}
+
+# Add the non-abundance explanatory variables
+WLT.A$PC1    <- median(A@frame$`poly(PC1, 2, raw = T)`)
+WLT.A$FISHER <- find_mode(A@frame$FISHER)
+
+WLT.B$PC1    <- median(B$model$`poly(PC1, 2, raw = T)`)
+WLT.B$PC2    <- median(B$model$`poly(PC2, 2, raw = T)`)
+
+WLT.C$FISHER <- find_mode(C@frame$FISHER)
+WLT.C$SPEED  <- median(C@frame$SPEED, raw = T)
+WLT.C$PC1    <- median(C@frame$`poly(PC1, 2, raw = T)`)
+
+WLT.D$CUM_EXP <- median(D$model$`log(CUM_EXP)`)
+WLT.D$PC1     <- median(D$model$`poly(PC1, 2, raw = T)`)
+WLT.D$PC2     <- median(D$model$`poly(PC2, 2, raw = T)`)
+
+# Generate predictions
+WLT.A.PRED       <- exp( predict(A,newdata=WLT.A) )
+WLT.A            <- cbind(WLT.A,WLT.A.PRED)
+
+WLT.B.PRED       <- inv.logit( predict(B,newdata=WLT.B) )
+WLT.B            <- cbind(WLT.B,WLT.B.PRED) 
+
+WLT.C.PRED       <- exp( predict(C,newdata=WLT.C) )
+WLT.C            <- cbind(WLT.C,WLT.C.PRED)
+
+WLT.D.PRED       <- inv.logit( predict(D,newdata=WLT.D) )
+WLT.D            <- cbind(WLT.D,WLT.D.PRED)
+
+# Calculate CPUE indices by YEAR x MONTH x AREA
+WLT.OLD      <- cbind(WLT.A,WLT.B)
+WLT.OLD$CPUE <- WLT.OLD$WLT.A.PRED*WLT.OLD$WLT.B.PRED 
+WLT.OLD      <- WLT.OLD %>% select(1:3,CPUE) %>% mutate(MONTH=as.numeric(MONTH)) 
+
+WLT.REC      <- cbind(WLT.C,WLT.D)
+WLT.REC$CPUE <- WLT.REC$WLT.C.PRED*WLT.REC$WLT.D.PRED 
+WLT.REC      <- WLT.REC %>% select(1:3,CPUE) %>% mutate(MONTH=as.numeric(MONTH))
+
+# Calculate CPUE by AREA and Winter/Summer seasons
+WLT.OLD.A  <- WLT.OLD %>% group_by(MONTH,AREA_A) %>% summarize(CPUE=mean(CPUE))
+WLT.REC.A  <- WLT.REC %>% group_by(MONTH,AREA_A) %>% summarize(CPUE=mean(CPUE))
+
+F.OLD    <- merge(G,WLT.OLD.A,by="AREA_A",all.y=T,allow.cartesian = T) # Add finer scale spatial grids
+F.REC    <- merge(G,WLT.REC.A,by="AREA_A",all.y=T,allow.cartesian = T) # Add finer scale spatial grids
+
+F.OLD$SEASON                    <- "Summer"
+F.OLD[MONTH<=4|MONTH>=9]$SEASON <- "Winter"
+F.REC$SEASON                    <- "Summer"
+F.REC[MONTH<=4|MONTH>=9]$SEASON <- "Winter"
+
+F.OLD <- F.OLD %>% mutate(CPUE.STD=CPUE/mean(CPUE),TIME="Old")
+F.REC <- F.REC %>% mutate(CPUE.STD=CPUE/mean(CPUE),TIME="Rec")
+Final <- rbind(F.OLD,F.REC)
+
+Final.a <- Final %>% group_by(MONTH,TIME) %>% summarize(CPUE.STD=mean(CPUE.STD),CPUE=mean(CPUE))
+ggplot(data=Final.a)+geom_line(aes(x=MONTH,y=CPUE.STD,col=TIME))+scale_x_continuous(breaks=seq(0,12,2))+theme_bw()#+facet_wrap(~SEASON)
+ggsave(last_plot(),file="Outputs/CPUE by month.png",height=5,width=5, unit="in")
+
+Final.b <- Final %>% group_by(AREA,SEASON) %>% summarize(CPUE.STD=mean(CPUE.STD),CPUE=mean(CPUE))
+
+# Add two missing areas and filter some weird areas
+Missing <- Final.b %>% filter(AREA=="308"|AREA=="505")
+Missing <- Missing %>% mutate(AREA=if_else(AREA=="308","328","527"))
+Final.b <- rbind(Final.b,Missing)
+
+Filter.areas <- c("351","452","578","579","580","594","595")
+Final.b      <- Final.b %>% filter(!(AREA%in%Filter.areas))
+
+# Merge data with fishing grid shapefile
+Final.b <- merge(grids,Final.b,by.x="AREA_ID",by.y="AREA",allow.cartesian=T)
+
+# Create CPUE map
+ggplot()+geom_sf(data=Final.b,aes(fill=CPUE.STD),lwd=0.1)+
+  coord_sf(xlim=c(-161,-154),ylim=c(18,23))+
+  scale_fill_gradientn(colors=brewer.pal(11,"RdYlGn"))+facet_wrap(~SEASON)
+ggsave(last_plot(),file="Outputs/Standardized CPUE.png",width=10,height=6,unit="in")
+
+
+

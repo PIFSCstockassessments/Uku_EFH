@@ -1,4 +1,7 @@
-require(tidyverse); require(data.table);require(boot);require(sf); require(rnaturalearth);require(rnaturalearthdata);require(RColorBrewer);
+require(pacman)
+pacman::p_load("boot","data.table","rnaturalearth","rnaturalearthdata","RColorBrewer","sf","tidyverse","this.path")
+
+root_dir <- this.path::here(..=1)
 
 # Load standardized models
 M <- readRDS(file="Data/DSH_2Qs=TRUE_RecEFF=Hours_OldSTART=1948.rds")
@@ -90,6 +93,7 @@ Final <- rbind(F.OLD,F.REC)
 
 Final.a <- Final %>% group_by(MONTH,TIME) %>% summarize(CPUE.STD=mean(CPUE.STD),CPUE=mean(CPUE))
 ggplot(data=Final.a)+geom_line(aes(x=MONTH,y=CPUE.STD,col=TIME))+scale_x_continuous(breaks=seq(0,12,2))+theme_bw()#+facet_wrap(~SEASON)
+ggsave(last_plot(),file="Outputs/CPUE by month.png",height=5,width=5, unit="in")
 
 Final.b <- Final %>% group_by(AREA,SEASON) %>% summarize(CPUE.STD=mean(CPUE.STD),CPUE=mean(CPUE))
 
@@ -99,17 +103,16 @@ Missing <- Missing %>% mutate(AREA=if_else(AREA=="308","328","527"))
 Final.b <- rbind(Final.b,Missing)
 
 Filter.areas <- c("351","452","578","579","580","594","595")
-Final.b      <- Final.b %>% filter(!(AREA_ID%in%Filter.areas))
+Final.b      <- Final.b %>% filter(!(AREA%in%Filter.areas))
 
 # Merge data with fishing grid shapefile
 Final.b <- merge(grids,Final.b,by.x="AREA_ID",by.y="AREA",allow.cartesian=T)
 
-# Clean out some of the weird areas
-
+# Create CPUE map
 ggplot()+geom_sf(data=Final.b,aes(fill=CPUE.STD),lwd=0.1)+
   coord_sf(xlim=c(-161,-154),ylim=c(18,23))+
   scale_fill_gradientn(colors=brewer.pal(11,"RdYlGn"))+facet_wrap(~SEASON)
-ggsave(last_plot(),file="Standardized CPUE.png",width=10,height=6,unit="in")
+ggsave(last_plot(),file="Outputs/Standardized CPUE.png",width=10,height=6,unit="in")
 
 
 

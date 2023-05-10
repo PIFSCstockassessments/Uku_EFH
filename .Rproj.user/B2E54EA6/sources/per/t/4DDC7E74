@@ -1,0 +1,26 @@
+{
+    "id": "4DDC7E74",
+    "path": "~/02_Work docs/01_Projects/06_Uku Essential Habitat/Uku_EFH/Scripts/01_CPUE analysis.R",
+    "project_path": "Scripts/01_CPUE analysis.R",
+    "type": "r_source",
+    "hash": "1866150168",
+    "contents": "",
+    "dirty": false,
+    "created": 1683686387212.0,
+    "source_on_save": false,
+    "relative_order": 1,
+    "properties": {
+        "source_window_id": "",
+        "Source": "Source",
+        "cursorPosition": "117,0",
+        "scrollLine": "77"
+    },
+    "folds": "",
+    "lastKnownWriteTime": 1683686589,
+    "encoding": "UTF-8",
+    "collab_server": "",
+    "source_window": "",
+    "last_content_update": 1683686589250,
+    "read_only": false,
+    "read_only_alternatives": []
+}
